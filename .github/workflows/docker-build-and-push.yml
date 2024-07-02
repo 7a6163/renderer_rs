@@ -35,5 +35,4 @@ jobs:
           push: true
           tags: |
             ghcr.io/${{ github.repository_owner }}/renderer_rs:latest
-            ghcr.io/${{ github.repository_owner }}/renderer_rs:${{ github.sha }}
           platforms: linux/amd64,linux/arm64
