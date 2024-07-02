@@ -10,13 +10,16 @@ COPY .  ./
 RUN cargo build --release
 
 # Runtime stage
-FROM ghcr.io/zenika/alpine-chrome
+FROM ghcr.io/zenika/alpine-chrome:124
 
+USER root
 # Install required packages
 RUN apk add --no-cache tini
 
 # Copy the compiled binary from the build stage
 COPY --from=builder /usr/src/renderer_rs/target/release/renderer_rs /usr/local/bin/renderer_rs
+
+USER chrome
 
 # Expose port 8080
 EXPOSE 8080

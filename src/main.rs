@@ -30,7 +30,8 @@ async fn main() {
         .and(with_semaphore(semaphore))
         .and_then(render_handler);
 
-    warp::serve(render_route).run(([127, 0, 0, 1], 8080)).await;
+    println!("Server running on http://0.0.0.0:8080");
+    warp::serve(render_route).run(([0, 0, 0, 0], 8080)).await;
 }
 
 #[derive(Deserialize)]
