@@ -12,8 +12,10 @@ async fn main() {
         OsStr::new("--no-sandbox"),
         OsStr::new("--disable-gpu"),
         OsStr::new("--disable-dev-shm-usage"),
-        OsStr::new("--remote-debugging-port=9222"),
         OsStr::new("--headless"),
+        OsStr::new("--disable-software-rasterizer"),
+        OsStr::new("--no-zygote"),
+        OsStr::new("--single-process"),
     ];
 
     let browser = Arc::new(
