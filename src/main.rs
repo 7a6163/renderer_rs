@@ -1,16 +1,19 @@
-use headless_chrome::{Browser, LaunchOptions};
-use serde::Deserialize;
+use headless_chrome::{Browser, LaunchOptions, Tab};
 use std::sync::Arc;
-use tokio::sync::Semaphore;
-use warp::Filter;
 use std::ffi::OsStr;
+use tokio::sync::{Semaphore, Mutex};
+use warp::Filter;
+use serde::Deserialize;
+use std::collections::VecDeque;
 
 #[tokio::main]
 async fn main() {
     let args: Vec<&OsStr> = vec![
         OsStr::new("--no-sandbox"),
         OsStr::new("--disable-gpu"),
-        OsStr::new("--ignore-certificate-errors"),
+        OsStr::new("--disable-dev-shm-usage"),
+        OsStr::new("--remote-debugging-port=9222"),
+        OsStr::new("--headless"),
     ];
 
     let browser = Arc::new(
@@ -23,11 +26,13 @@ async fn main() {
     );
 
     let semaphore = Arc::new(Semaphore::new(4));
+    let tab_pool = Arc::new(Mutex::new(VecDeque::new()));
 
     let render_route = warp::path("html")
         .and(warp::query::<RenderQuery>())
-        .and(with_browser(browser))
-        .and(with_semaphore(semaphore))
+        .and(with_browser(browser.clone()))
+        .and(with_semaphore(semaphore.clone()))
+        .and(with_tab_pool(tab_pool.clone()))
         .and_then(render_handler);
 
     println!("Server running on http://0.0.0.0:8080");
@@ -51,6 +56,12 @@ fn with_semaphore(
     warp::any().map(move || semaphore.clone())
 }
 
+fn with_tab_pool(
+    tab_pool: Arc<Mutex<VecDeque<Arc<Tab>>>>,
+) -> impl Filter<Extract = (Arc<Mutex<VecDeque<Arc<Tab>>>>,), Error = std::convert::Infallible> + Clone {
+    warp::any().map(move || tab_pool.clone())
+}
+
 #[derive(Debug)]
 struct CustomError;
 
@@ -60,13 +71,21 @@ async fn render_handler(
     query: RenderQuery,
     browser: Arc<Browser>,
     semaphore: Arc<Semaphore>,
+    tab_pool: Arc<Mutex<VecDeque<Arc<Tab>>>>,
 ) -> Result<impl warp::Reply, warp::Rejection> {
     let _permit = semaphore.acquire().await;
 
-    let tab = browser.new_tab().map_err(|e| {
-        eprintln!("Failed to create new tab: {:?}", e);
-        warp::reject::custom(CustomError)
-    })?;
+    let tab = {
+        let mut pool = tab_pool.lock().await;
+        if let Some(tab) = pool.pop_front() {
+            tab
+        } else {
+            browser.new_tab().map_err(|e| {
+                eprintln!("Failed to create new tab: {:?}", e);
+                warp::reject::custom(CustomError)
+            })?
+        }
+    };
 
     tab.navigate_to(&query.url).map_err(|e| {
         eprintln!("Failed to navigate to URL: {:?}", e);
@@ -81,6 +100,11 @@ async fn render_handler(
         eprintln!("Failed to get content: {:?}", e);
         warp::reject::custom(CustomError)
     })?;
+
+    {
+        let mut pool = tab_pool.lock().await;
+        pool.push_back(Arc::clone(&tab));
+    }
 
     Ok(warp::reply::html(content))
 }
